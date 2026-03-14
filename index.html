@@ -1,0 +1,351 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Artillery Fire Control Calculator V2</title>
+
+<style>
+body{background:#081412;font-family:Arial;color:#8fe3b0;margin:0;}
+.topbar{display:flex;justify-content:space-around;padding:15px;background:#49514f;}
+input,select{background:#5f6e68;border:none;padding:6px;color:white;}
+.container{display:flex;height:80vh;}
+.sidebar{width:240px;background:#586260;padding:10px;}
+.missionRow{display:flex;margin-bottom:6px;}
+.missionBtn{flex:1;background:#6cc190;border:none;cursor:pointer;padding:6px;}
+.missionBtn.active{background:#9ff0c0;}
+.icon{margin-left:5px;cursor:pointer;}
+.delete{color:red;}
+.main{flex:1;padding:20px;}
+.tabs{display:flex;gap:10px;margin-bottom:20px;}
+.tab{flex:1;background:#46514f;padding:10px;text-align:center;cursor:pointer;}
+.tab.active{background:#6cc190;color:black;}
+.tabContent{display:none;}
+.tabContent.active{display:block;}
+.targetInputs{width:320px;}
+.targetInputs input{width:100%;margin-bottom:10px;}
+.calcBtn{margin-top:30px;padding:15px 30px;background:#6cc190;border:none;cursor:pointer;font-size:16px;}
+.results{display:flex;justify-content:space-around;background:#49514f;padding:15px;font-size:18px;}
+.adjustContainer{display:flex;justify-content:center;margin-top:30px;}
+.adjustGrid{display:grid;grid-template-columns:200px 200px 200px;grid-template-rows:120px 120px 120px;text-align:center;}
+.adjustBox{width:60px;}
+</style>
+</head>
+
+<body>
+
+<div class="topbar">
+<label>Battery Grid<input id="batteryGrid"></label>
+<label>Battery Elevation<input id="batteryH"></label>
+<label>Gun<select><option>M777 155mm</option></select></label>
+<label>Charge<select id="chargeOverride">
+<option value="auto">Auto</option>
+<option value="1">Charge 1</option>
+<option value="2">Charge 2</option>
+<option value="3">Charge 3</option>
+<option value="4">Charge 4</option>
+<option value="5">Charge 5</option>
+</select></label>
+</div>
+
+<div class="container">
+
+<div class="sidebar">
+<button onclick="newMission()">+ New Mission</button>
+<div id="missionList"></div>
+</div>
+
+<div class="main">
+
+<div class="tabs">
+<div class="tab active" onclick="switchTab('mission')">Mission</div>
+<div class="tab" onclick="switchTab('adjust')">Adjust Fire</div>
+<div class="tab" onclick="switchTab('direct')">Direct Fire</div>
+</div>
+
+<div id="mission" class="tabContent active">
+<div class="targetInputs">
+<input id="targetGrid" placeholder="Target Grid">
+<input id="targetH" placeholder="Target Elevation">
+<input id="foBearing" placeholder="FO Bearing (deg optional)">
+</div>
+<button class="calcBtn" onclick="calculate()">Calculate</button>
+</div>
+
+<div id="adjust" class="tabContent">
+<div class="adjustContainer">
+<div class="adjustGrid">
+<div></div>
+
+<div>ADD<br><input id="addBox" class="adjustBox"><br>
+<button onclick="addAdjust('add',10)">10</button>
+<button onclick="addAdjust('add',25)">25</button>
+<button onclick="addAdjust('add',50)">50</button>
+</div>
+
+<div></div>
+
+<div>LEFT<br><input id="leftBox" class="adjustBox"><br>
+<button onclick="addAdjust('left',10)">10</button>
+<button onclick="addAdjust('left',25)">25</button>
+<button onclick="addAdjust('left',50)">50</button>
+</div>
+
+<div>FO Bearing<br><input id="adjustBearing"></div>
+
+<div>RIGHT<br><input id="rightBox" class="adjustBox"><br>
+<button onclick="addAdjust('right',10)">10</button>
+<button onclick="addAdjust('right',25)">25</button>
+<button onclick="addAdjust('right',50)">50</button>
+</div>
+
+<div></div>
+
+<div>DROP<br><input id="dropBox" class="adjustBox"><br>
+<button onclick="addAdjust('drop',10)">10</button>
+<button onclick="addAdjust('drop',25)">25</button>
+<button onclick="addAdjust('drop',50)">50</button>
+</div>
+
+<div></div>
+</div>
+</div>
+
+<button class="calcBtn" onclick="calculate()">Recalculate</button>
+</div>
+
+<div id="direct" class="tabContent">
+<h3>Direct Fire</h3>
+Distance to Target (m)<br>
+<input id="dfRange"><br><br>
+Elevation Difference (degrees)<br>
+<input id="dfAngle"><br><br>
+<button class="calcBtn" onclick="directFire()">Calculate Direct Fire</button>
+<br><br>
+Result Elevation (mils)<br>
+<span id="directMils">--</span>
+</div>
+
+</div>
+</div>
+
+<div class="results">
+<div>Range<br><span id="range">--</span></div>
+<div>Bearing (mils)<br><span id="bearing">--</span></div>
+<div>Elevation<br><span id="elev">--</span></div>
+<div>Charge<br><span id="charge">--</span></div>
+<div>TOF<br><span id="tof">--</span></div>
+</div>
+
+<script>
+
+function parseGrid(grid){
+grid = grid.toString().trim()
+if(grid.length === 8){
+let e = parseInt(grid.slice(0,4))*10
+let n = parseInt(grid.slice(4))*10
+return {e:e, n:n}
+}
+if(grid.length === 10){
+let e = parseInt(grid.slice(0,5))
+let n = parseInt(grid.slice(5))
+return {e:e, n:n}
+}
+alert("Grid must be 8 or 10 digits")
+return null
+}
+
+/* MISSIONS */
+
+let missions=[]
+let active=0
+
+function newMission(){
+let m={name:"Mission "+(missions.length+1),grid:"",h:"",fo:""}
+missions.push(m)
+renderMissions()
+selectMission(missions.length-1)
+}
+
+function renderMissions(){
+let list=document.getElementById("missionList")
+list.innerHTML=""
+missions.forEach((m,i)=>{
+let row=document.createElement("div")
+row.className="missionRow"
+let btn=document.createElement("button")
+btn.className="missionBtn"
+btn.innerText=m.name
+if(i===active) btn.classList.add("active")
+btn.onclick=()=>selectMission(i)
+let edit=document.createElement("span")
+edit.innerText="✏"
+edit.className="icon"
+edit.onclick=()=>{let n=prompt("Rename mission",m.name);if(n){m.name=n;renderMissions()}}
+let del=document.createElement("span")
+del.innerText="✖"
+del.className="icon delete"
+del.onclick=()=>{missions.splice(i,1);active=0;renderMissions();loadMission()}
+row.appendChild(btn)
+row.appendChild(edit)
+row.appendChild(del)
+list.appendChild(row)
+})
+}
+
+function selectMission(i){saveMission();active=i;loadMission();renderMissions()}
+
+function saveMission(){
+if(!missions.length) return
+let m=missions[active]
+m.grid=targetGrid.value
+m.h=targetH.value
+m.fo=foBearing.value
+}
+
+function loadMission(){
+if(!missions.length) return
+let m=missions[active]
+targetGrid.value=m.grid
+targetH.value=m.h
+foBearing.value=m.fo
+}
+
+function switchTab(tab){
+document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"))
+document.querySelectorAll(".tabContent").forEach(t=>t.classList.remove("active"))
+document.getElementById(tab).classList.add("active")
+if(tab=="mission") document.querySelectorAll(".tab")[0].classList.add("active")
+if(tab=="adjust") document.querySelectorAll(".tab")[1].classList.add("active")
+if(tab=="direct") document.querySelectorAll(".tab")[2].classList.add("active")
+}
+
+function addAdjust(dir,val){
+let box=document.getElementById(dir+"Box")
+box.value=(parseInt(box.value)||0)+val
+}
+
+const charges={
+1:[[950,1245,24.4,24,0.2],[1000,1221,24.2,24,0.2],[1050,1197,24,24,0.2],[1100,1171,23.7,26,0.3],[1150,1144,23.4,27,0.3],[1200,1115,23.1,29,0.3],[1250,1084,22.7,31,0.4],[1300,1050,22.3,34,0.4],[1350,1011,21.8,39,0.5],[1400,965,21.2,46,0.6],[1450,907,20.3,58,0.9],[1500,800,18.6,107,1.7]],
+2:[[1500,1270,33.1,13,0.1],[1550,1257,33,14,0.1],[1600,1243,32.9,14,0.1],[1650,1229,32.7,15,0.2],[1700,1214,32.5,14,0.2],[1750,1200,32.4,15,0.1],[1800,1185,32.1,16,0.3],[1850,1169,31.9,16,0.2],[1900,1153,31.7,17,0.2],[1950,1136,31.5,17,0.2],[2000,1119,31.2,18,0.3],[2050,1101,31,19,0.2],[2100,1082,30.7,20,0.3],[2150,1062,30.3,21,0.4],[2200,1041,30,23,0.3],[2250,1018,29.6,23,0.4],[2300,995,29.2,28,0.5],[2350,967,28.7,29,0.6],[2400,938,28.1,34,0.6],[2450,904,27.5,44,1],[2500,860,26.5,44,1]],
+3:[[2100,1272,41,10,0.1],[2200,1253,40.8,10,0.2],[2300,1233,40.5,10,0.2],[2400,1213,40.2,11,0.2],[2500,1192,39.9,11,0.2],[2600,1170,39.5,12,0.2],[2700,1147,39.1,12,0.2],[2800,1123,38.7,13,0.2],[2900,1098,38.3,14,0.3],[3000,1070,37.7,14,0.2],[3100,1042,37.2,16,0.4],[3200,1010,36.5,16,0.3],[3300,975,35.7,18,0.4],[3400,936,34.9,22,0.6],[3500,890,33.7,28,0.7],[3600,828,32.1,28,0.7]],
+4:[[2600,1271,47.2,8,0.1],[2700,1255,47,7,0.2],[2800,1240,46.7,8,0.1],[2900,1224,46.5,9,0.2],[3000,1207,46.2,9,0.2],[3100,1190,45.9,9,0.2],[3200,1172,45.6,9,0.2],[3300,1154,45.2,9,0.2],[3400,1135,44.9,9,0.2],[3500,1116,44.5,9,0.2],[3600,1095,44,10,0.2],[3700,1074,43.6,10,0.2],[3800,1052,43.1,11,0.3],[3900,1028,42.5,12,0.3],[4000,1003,41.9,12,0.3],[4100,976,41.3,14,0.3],[4200,946,40.5,15,0.4],[4300,912,39.6,17,0.5],[4400,874,38.5,17,0.5],[4500,828,37.2,20,0.8]],
+5:[[3000,1271,52.2,7,0.1],[3100,1258,52,7,0.1],[3200,1244,51.8,7,0.1],[3300,1230,51.5,7,0.1],[3400,1216,51.3,7,0.2],[3500,1202,51,7,0.1],[3600,1187,50.7,7,0.1],[3700,1172,50.4,8,0.1],[3800,1156,50.1,7,0.2],[3900,1140,49.8,8,0.2],[4000,1124,49.4,9,0.2],[4100,1107,49,9,0.2],[4200,1089,48.6,9,0.2],[4300,1071,48.2,9,0.2],[4400,1052,47.7,10,0.2],[4500,1032,47.2,10,0.2],[4600,1011,46.7,10,0.3],[4700,989,46.1,11,0.3],[4800,966,45.5,12,0.4],[4900,941,44.7,13,0.3],[5000,913,44,14,0.5],[5100,883,43.1,16,0.5],[5200,850,42,20,0.6],[5300,809,40.7,20,0.6]]
+}
+
+function interp(table,r){
+for(let i=0;i<table.length-1;i++){
+let r1=table[i][0]
+let r2=table[i+1][0]
+if(r>=r1 && r<=r2){
+let p=(r-r1)/(r2-r1)
+let elev=table[i][1]+p*(table[i+1][1]-table[i][1])
+let tof=table[i][2]+p*(table[i+1][2]-table[i][2])
+let dropElev=table[i][3]+p*(table[i+1][3]-table[i][3])
+let dropTOF=table[i][4]+p*(table[i+1][4]-table[i][4])
+return[elev,tof,dropElev,dropTOF]
+}
+}
+return null
+}
+
+function calculate(){
+
+saveMission()
+
+let b=parseGrid(batteryGrid.value)
+let t=parseGrid(targetGrid.value)
+
+if(!b || !t) return
+
+let bH=parseFloat(batteryH.value)||0
+let tH=parseFloat(targetH.value)||0
+
+let fo=parseFloat(foBearing.value)||parseFloat(adjustBearing.value)||0
+
+let add=parseFloat(addBox.value)||0
+let drop=parseFloat(dropBox.value)||0
+let left=parseFloat(leftBox.value)||0
+let right=parseFloat(rightBox.value)||0
+
+let forward=add-drop
+let lateral=right-left
+
+let rad=fo*Math.PI/180
+
+t.e+=forward*Math.sin(rad)+lateral*Math.sin(rad+Math.PI/2)
+t.n+=forward*Math.cos(rad)+lateral*Math.cos(rad+Math.PI/2)
+
+let dx=t.e-b.e
+let dy=t.n-b.n
+
+let range=Math.sqrt(dx*dx+dy*dy)
+
+let bearingDeg=(Math.atan2(dx,dy)*180/Math.PI+360)%360
+let bearingMil=bearingDeg*17.777777
+
+let chargeSel=chargeOverride.value
+
+if(chargeSel==="auto"){
+if(range<=1500)chargeSel=1
+else if(range<=2500)chargeSel=2
+else if(range<=3600)chargeSel=3
+else if(range<=4500)chargeSel=4
+else chargeSel=5
+}
+
+let result=interp(charges[chargeSel],range)
+
+if(!result){
+alert("Range outside ballistic tables")
+return
+}
+
+let heightDiff=tH-bH
+let hundreds=heightDiff/100
+
+let elevation=result[0]-(result[2]*hundreds)
+let tof=result[1]-(result[3]*hundreds)
+
+document.getElementById("range").innerText=Math.round(range)+" m"
+document.getElementById("bearing").innerText=Math.round(bearingMil)
+document.getElementById("elev").innerText=Math.round(elevation)
+document.getElementById("charge").innerText=chargeSel
+document.getElementById("tof").innerText=tof.toFixed(1)+" s"
+
+addBox.value=""
+dropBox.value=""
+leftBox.value=""
+rightBox.value=""
+
+}
+
+const directTable=[[50,14],[100,28],[150,42],[200,56],[250,70],[300,85],[350,100],[400,115],[450,127],[500,138],[550,151],[600,165],[650,179],[700,194],[750,209],[800,225],[850,242],[900,259]]
+
+function interpDirect(r){
+for(let i=0;i<directTable.length-1;i++){
+let r1=directTable[i][0]
+let r2=directTable[i+1][0]
+if(r>=r1 && r<=r2){
+let p=(r-r1)/(r2-r1)
+return directTable[i][1]+p*(directTable[i+1][1]-directTable[i][1])
+}
+}
+return null
+}
+
+function directFire(){
+let r=parseFloat(dfRange.value)
+let deg=parseFloat(dfAngle.value)
+let base=interpDirect(r)
+let angleMils=deg*17.7778
+let final=base+angleMils
+document.getElementById("directMils").innerText=Math.round(final)
+}
+
+newMission()
+
+</script>
+
+</body>
+</html>
